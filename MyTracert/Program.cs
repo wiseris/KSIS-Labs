@@ -78,13 +78,13 @@ namespace MyTraceroute
                 long[] responseTimes = new long[Attempts];
                 bool[] received = new bool[Attempts];
 
-                
                 for (int attempt = 0; attempt < Attempts; attempt++)
                 {
                     ushort seq = (ushort)((ttl << 8) | (attempt + 1));
                     byte[] packet = CreateIcmpPacket(seq);
 
                     Stopwatch sw = Stopwatch.StartNew();
+
                     try
                     {
                         socket.SendTo(packet, remoteEP);
@@ -99,6 +99,7 @@ namespace MyTraceroute
                                 long receiveTime = sw.ElapsedMilliseconds;
 
                                 IPEndPoint responder = (IPEndPoint)sender;
+
                                 if (hopAddress == null)
                                     hopAddress = responder.Address;
 
@@ -107,40 +108,37 @@ namespace MyTraceroute
 
                                 byte type = buffer[icmpOffset];
 
-                                if (type == 11) 
+                                if (type == 11)
                                 {
                                     int idx = MatchReturnedPacket(buffer, icmpOffset);
                                     if (idx == attempt)
                                     {
                                         responseTimes[attempt] = receiveTime;
                                         received[attempt] = true;
-                                        break; 
+                                        break;
                                     }
                                 }
-                                else if (type == 0) 
+                                else if (type == 0)
                                 {
-                                    ushort respId = (ushort)IPAddress.NetworkToHostOrder(
-                                        (short)((buffer[icmpOffset + 4] << 8) | buffer[icmpOffset + 5]));
+                                    ushort respId = (ushort)((buffer[icmpOffset + 4] << 8) | buffer[icmpOffset + 5]);
 
                                     if (respId == identifier)
                                     {
                                         responseTimes[attempt] = receiveTime;
                                         received[attempt] = true;
                                         destinationReached = true;
-                                        break; 
+                                        break;
                                     }
                                 }
                             }
                         }
 
                         if (!received[attempt])
-                        {
-                            responseTimes[attempt] = -1; 
-                        }
+                            responseTimes[attempt] = -1;
                     }
                     catch
                     {
-                        responseTimes[attempt] = -1; 
+                        responseTimes[attempt] = -1;
                     }
                 }
 
@@ -161,14 +159,14 @@ namespace MyTraceroute
                 }
                 else
                 {
-                    Console.Write(" Превышен интервал ожидания для запроса.");
+                    Console.Write(" Request timed out.");
                 }
 
                 Console.WriteLine();
 
                 if (destinationReached)
                 {
-                    Console.WriteLine("\nТрассировка завершена.");
+                    Console.WriteLine("\nTrace complete.");
                     break;
                 }
             }
@@ -177,23 +175,23 @@ namespace MyTraceroute
         static byte[] CreateIcmpPacket(ushort seq)
         {
             byte[] packet = new byte[8 + 32];
-            packet[0] = 8; 
-            packet[1] = 0; 
 
-            short networkId = IPAddress.HostToNetworkOrder((short)identifier);
-            packet[4] = (byte)((networkId >> 8) & 0xFF);
-            packet[5] = (byte)(networkId & 0xFF);
+            packet[0] = 8;
+            packet[1] = 0;
 
-            short networkSeq = IPAddress.HostToNetworkOrder((short)seq);
-            packet[6] = (byte)((networkSeq >> 8) & 0xFF);
-            packet[7] = (byte)(networkSeq & 0xFF);
+            packet[4] = (byte)(identifier >> 8);
+            packet[5] = (byte)(identifier);
+
+            packet[6] = (byte)(seq >> 8);
+            packet[7] = (byte)(seq);
 
             byte[] data = Encoding.ASCII.GetBytes("abcdefghijklmnopqrstuvwabcdefghi");
             Array.Copy(data, 0, packet, 8, Math.Min(data.Length, packet.Length - 8));
 
             ushort checksum = CalculateChecksum(packet);
+
             packet[2] = (byte)(checksum >> 8);
-            packet[3] = (byte)(checksum & 0xFF);
+            packet[3] = (byte)(checksum);
 
             return packet;
         }
@@ -206,15 +204,12 @@ namespace MyTraceroute
                 int innerIpLen = (buffer[innerIpOffset] & 0x0F) * 4;
                 int innerIcmpOffset = innerIpOffset + innerIpLen;
 
-                ushort networkId = (ushort)((buffer[innerIcmpOffset + 4] << 8) | buffer[innerIcmpOffset + 5]);
-                short hostId = IPAddress.NetworkToHostOrder((short)networkId);
+                ushort id = (ushort)((buffer[innerIcmpOffset + 4] << 8) | buffer[innerIcmpOffset + 5]);
 
-                if (hostId == identifier)
+                if (id == identifier)
                 {
-                    ushort networkSeq = (ushort)((buffer[innerIcmpOffset + 6] << 8) | buffer[innerIcmpOffset + 7]);
-                    short hostSeq = IPAddress.NetworkToHostOrder((short)networkSeq);
-
-                    return (hostSeq & 0xFF) - 1;
+                    ushort seq = (ushort)((buffer[innerIcmpOffset + 6] << 8) | buffer[innerIcmpOffset + 7]);
+                    return (seq & 0xFF) - 1;
                 }
             }
             catch { }
@@ -226,15 +221,19 @@ namespace MyTraceroute
         {
             int sum = 0;
             int i = 0;
+
             while (i < data.Length - 1)
             {
                 sum += (data[i] << 8) | data[i + 1];
                 i += 2;
             }
+
             if (i < data.Length)
                 sum += data[i] << 8;
+
             while ((sum >> 16) != 0)
                 sum = (sum & 0xFFFF) + (sum >> 16);
+
             return (ushort)(~sum);
         }
 
