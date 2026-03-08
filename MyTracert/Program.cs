@@ -13,6 +13,7 @@ namespace MyTraceroute
         const int Timeout = 4000;
 
         static ushort identifier;
+        static ushort sequence;
 
         static void Main(string[] args)
         {
@@ -45,7 +46,14 @@ namespace MyTraceroute
             {
                 if (!IPAddress.TryParse(target, out targetAddress))
                 {
-                    targetAddress = Dns.GetHostEntry(target).AddressList[0];
+                    var hostEntry = Dns.GetHostEntry(target);
+                    targetAddress = hostEntry.AddressList.FirstOrDefault(ip => ip.AddressFamily == AddressFamily.InterNetwork);
+
+                    if (targetAddress == null)
+                    {
+                        Console.WriteLine("No IPv4 address found for host.");
+                        return;
+                    }
                 }
             }
             catch
@@ -80,7 +88,7 @@ namespace MyTraceroute
 
                 for (int attempt = 0; attempt < Attempts; attempt++)
                 {
-                    ushort seq = (ushort)((ttl << 8) | (attempt + 1));
+                    ushort seq = ++sequence;
                     byte[] packet = CreateIcmpPacket(seq);
 
                     Stopwatch sw = Stopwatch.StartNew();
@@ -111,7 +119,7 @@ namespace MyTraceroute
                                 if (type == 11)
                                 {
                                     int idx = MatchReturnedPacket(buffer, icmpOffset);
-                                    if (idx == attempt)
+                                    if (idx == seq)
                                     {
                                         responseTimes[attempt] = receiveTime;
                                         received[attempt] = true;
@@ -205,11 +213,11 @@ namespace MyTraceroute
                 int innerIcmpOffset = innerIpOffset + innerIpLen;
 
                 ushort id = (ushort)((buffer[innerIcmpOffset + 4] << 8) | buffer[innerIcmpOffset + 5]);
+                ushort seq = (ushort)((buffer[innerIcmpOffset + 6] << 8) | buffer[innerIcmpOffset + 7]);
 
                 if (id == identifier)
                 {
-                    ushort seq = (ushort)((buffer[innerIcmpOffset + 6] << 8) | buffer[innerIcmpOffset + 7]);
-                    return (seq & 0xFF) - 1;
+                    return seq;
                 }
             }
             catch { }
